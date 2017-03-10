@@ -10,6 +10,8 @@
 #include <iostream>
 #include <cstring>
 #include <vector>
+#include <limits>
+#include <fstream>
 #include "openGLHeader.h"
 #include "glutHeader.h"
 
@@ -71,12 +73,14 @@ int screenshotCounter = 0;
 Spline * splines; // the spline array 
 int numSplines; // total number of splines 
 
-std::vector<GLuint> splineVaos;
-std::vector<std::vector<float> > pos;
-std::vector<std::vector<float> > color;
+std::vector<GLuint> splinesVaos;
+std::vector<int> splinesCount;
+std::vector<GLuint> splinesCrossbarVaos;
+std::vector<int> splinesCrossbarCount;
+std::vector<std::vector<Point*> > splinesPoints;
 
-GLuint metalTexture, woodTexture, waterTexture, skyTexture;
-GLuint vaoWater, vaoSky;
+GLuint metalTexture, woodTexture, grassTexture, skyTexture;
+GLuint vaoGrass, vaoSky;
 GLuint debugVAO;
 float coasterPos = 1.0f;
 Point oldTan(0.0f, 0.0f, 0.0f);
@@ -89,12 +93,13 @@ float cam[3][3] =
 	{ 0.0f, 1.0f, 0.0f }
 };
 
+const float coasterSpeed = 0.7f;
+const float resolution = 0.6f;
+
 #define DEBUG false
+#define SCREENSHOT_MODE false
 
-
-
-
-inline const int clampIndex(const int index, const int length)
+inline int clampIndex(const int index, const int length)
 {
 	if (index < 0)
 	{
@@ -106,7 +111,7 @@ inline const int clampIndex(const int index, const int length)
 	}
 	else if (index > length)
 	{
-		return 0;
+		return length;
 	}
 	else
 	{
@@ -114,25 +119,17 @@ inline const int clampIndex(const int index, const int length)
 	}
 }
 
-inline const float getCatmullRomTangent1D(const float t, const float x0, const float x1, const float x2, const float x3)
+inline float getCatmullRomTangent1D(const float t, const float x0, const float x1, const float x2, const float x3)
 {
 	// derivative of the value formula
-	//float a = 2.0f * x1;
 	float b = x2 - x0;
 	float c = 2.0f * x0 - 5.0f * x1 + 4.0f * x2 - x3;
 	float d = -x0 + 3.0f * x1 - 3.0f * x2 + x3;
 	float pos = 0.5f * ((b)+(2 * c * t) + (3 * d * t * t));
 	return pos;
-
-	//return 
-	//	0.5f *(
-	//		(-x0 + x2) +
-	//		(4 * x0 - 10 * x1 + 8 * x2 - x3) * t +
-	//		(-3 * x0 + 9 * x1 - 9 * x2 + x3) * t * t
-	//	);
 }
 
-inline const float getCatmullRomValue(const float t, const float x0, const float x1, const float x2, const float x3)
+inline float getCatmullRomValue(const float t, const float x0, const float x1, const float x2, const float x3)
 {
 	// do math.
 	float a = 2.0f * x1;
@@ -143,7 +140,7 @@ inline const float getCatmullRomValue(const float t, const float x0, const float
 	return pos;
 }
 
-inline const Point getCatmullRomTangent(const float t, const Point p0, const Point p1, const Point p2, const Point p3)
+inline Point getCatmullRomTangent(const float t, const Point& p0, const Point& p1, const Point& p2, const Point& p3)
 {
 	float x = getCatmullRomTangent1D(t, static_cast<float>(p0.x), static_cast<float>(p1.x), static_cast<float>(p2.x), static_cast<float>(p3.x));
 	float y = getCatmullRomTangent1D(t, static_cast<float>(p0.y), static_cast<float>(p1.y), static_cast<float>(p2.y), static_cast<float>(p3.y));
@@ -151,7 +148,7 @@ inline const Point getCatmullRomTangent(const float t, const Point p0, const Poi
 	return Point(x, y, z);
 }
 
-inline const Point getCatmullRomPoint(const float t, const Point p0, const Point p1, const Point p2, const Point p3)
+inline Point getCatmullRomPoint(const float t, const Point& p0, const Point& p1, const Point& p2, const Point& p3)
 {
 	float x = getCatmullRomValue(t, static_cast<float>(p0.x), static_cast<float>(p1.x), static_cast<float>(p2.x), static_cast<float>(p3.x));
 	float y = getCatmullRomValue(t, static_cast<float>(p0.y), static_cast<float>(p1.y), static_cast<float>(p2.y), static_cast<float>(p3.y));
@@ -344,6 +341,8 @@ void displayFunc()
 	// render some stuff
 	glClearColor(0.05f, 0.15f, 0.2f, 0.0f);
 	glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
+	glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
+	glEnable(GL_DEPTH_TEST);
 
 
 	/// COMPUTING THE MODELVIEW MATRIX
@@ -388,17 +387,17 @@ void displayFunc()
 		glUniformMatrix4fv(h_projectionMatrix, 1, isRowMajor, p);
 	}
 
-	// Display Water
-	{
-		glActiveTexture(GL_TEXTURE0);
-		glBindTexture(GL_TEXTURE_2D, waterTexture);
-		//glEnable(GL_TEXTURE_2D);
-		glBindVertexArray(vaoWater);
-		GLint first = 0;
-		GLsizei count = 1 * 2 * 3;
-		glDrawArrays(GL_TRIANGLES, first, count);
-		glBindVertexArray(0);
-	}
+	//// Display Grass
+	//{
+	//	glActiveTexture(GL_TEXTURE0);
+	//	glBindTexture(GL_TEXTURE_2D, grassTexture);
+	//	//glEnable(GL_TEXTURE_2D);
+	//	glBindVertexArray(vaoGrass);
+	//	GLint first = 0;
+	//	GLsizei count = 1 * 2 * 3;
+	//	glDrawArrays(GL_TRIANGLES, first, count);
+	//	glBindVertexArray(0);
+	//}
 
 	// Display Skybox
 	{
@@ -407,18 +406,30 @@ void displayFunc()
 		//glEnable(GL_TEXTURE_2D);
 		glBindVertexArray(vaoSky);
 		GLint first = 0;
-		GLsizei count = 5*2*3;
+		GLsizei count = 6 * 2 * 3;
 		glDrawArrays(GL_TRIANGLES, first, count);
 		glBindVertexArray(0);
 	}
 
-	// Display splines
-	for (unsigned i = 0; i < splineVaos.size(); i++)
+	// Display splines - metal
+	for (unsigned i = 0; i < splinesVaos.size(); i++)
 	{
-		glBindVertexArray(splineVaos[i]);
+		glBindTexture(GL_TEXTURE_2D, metalTexture);
+		glBindVertexArray(splinesVaos[i]);
 		GLint first = 0;
-		GLsizei count = pos[i].size() / 3;
-		glDrawArrays(GL_LINE_STRIP, first, count);
+		GLsizei count = splinesCount[i];
+		glDrawArrays(GL_TRIANGLES, first, count);
+		glBindVertexArray(0);
+	}
+
+	// Display splines - wood
+	for (unsigned i = 0; i < splinesVaos.size(); i++)
+	{
+		glBindTexture(GL_TEXTURE_2D, woodTexture);
+		glBindVertexArray(splinesCrossbarVaos[i]);
+		GLint first = 0;
+		GLsizei count = splinesCrossbarCount[i];
+		glDrawArrays(GL_TRIANGLES, first, count);
 		glBindVertexArray(0);
 	}
 
@@ -427,13 +438,14 @@ void displayFunc()
 }
 
 // for naming the frames
-std::string intToStr(int n)
+inline std::string intToStr(int n)
 {
-	char c[4];
-	c[0] = '0' + (n / 100);
-	c[1] = '0' + ((n / 10) % 10);
-	c[2] = '0' + (n % 10);
-	c[3] = '\0';
+	char c[5];
+	c[0] = '0' + (n / 1000 % 10);
+	c[1] = '0' + (n / 100 % 10);
+	c[2] = '0' + ((n / 10) % 10);
+	c[3] = '0' + (n % 10);
+	c[4] = '\0';
 	return c;
 }
 
@@ -457,47 +469,63 @@ void idleFunc()
 		float integerTemp;
 		float fraction = modf(coasterPos, &integerTemp);
 		int integer = static_cast<int> (integerTemp);
-		Point pos = getCatmullRomPoint(fraction, splines[0].points[integer - 1], splines[0].points[integer], 
-			splines[0].points[integer + 1], splines[0].points[integer + 2]);
-		
-		Point newTan = getCatmullRomTangent(fraction, splines[0].points[integer - 1], splines[0].points[integer],
-			splines[0].points[integer + 1], splines[0].points[integer + 2]);
 
+		Point pos = Point::Lerp(splinesPoints[0][integer - 1][0], splinesPoints[0][integer][0], fraction);
+		//Point pos = getCatmullRomPoint(fraction, splines[0].points[integer - 1], splines[0].points[integer], 
+		//	splines[0].points[integer + 1], splines[0].points[integer + 2]);
+		//
+		//Point tan = getCatmullRomTangent(fraction, splines[0].points[integer - 1], splines[0].points[integer],
+		//	splines[0].points[integer + 1], splines[0].points[integer + 2]);
+		Point tan = Point::Lerp(splinesPoints[0][integer - 1][1], splinesPoints[0][integer][1], fraction);
 
-		Point tanDif(newTan.x - oldTan.x, newTan.y - oldTan.y, newTan.z - oldTan.z);
+		//Point tanDif(newTan.x - oldTan.x, newTan.y - oldTan.y, newTan.z - oldTan.z);
 
-		tanDif.Normalize();
+		//tanDif.Normalize();
 
-		//Point camUp = Point(oldCamUp.x + tanDif.x, oldCamUp.y + tanDif.y, oldCamUp.z + tanDif.z);
-		Point camUp = Point::Lerp(oldCamUp, camUp, 0.03f);
-		camUp = newTan.Orthogonalize(camUp);
-		camUp.Normalize();
+		//Point norm = 
+		Point norm = Point::Lerp(splinesPoints[0][integer - 1][2], splinesPoints[0][integer][2], fraction);
+		////Point camUp = Point(oldCamUp.x + tanDif.x, oldCamUp.y + tanDif.y, oldCamUp.z + tanDif.z);
+		//Point camUp = Point::Lerp(oldCamUp, camUp, 0.03f);
+		//camUp = newTan.Orthogonalize(camUp);
+		//camUp.Normalize();
 
 		// SET CAMERA LOOK AT
-
-		Point finalPos = pos + (camUp * 0.5f);
+		Point finalPos = pos + (norm / 15.0f);
+		//Point finalPos = pos + Point::Up / 15.0f;
 		cam[0][0] = static_cast<float>(finalPos.x);
 		cam[0][1] = static_cast<float>(finalPos.y);
 		cam[0][2] = static_cast<float>(finalPos.z);
 
-		Point lookAt = finalPos + newTan;
+		Point lookAt = finalPos + tan;
 		cam[1][0] = static_cast<float>(lookAt.x);
 		cam[1][1] = static_cast<float>(lookAt.y);
 		cam[1][2] = static_cast<float>(lookAt.z);
 
-		cam[2][0] = camUp.x;
-		cam[2][1] = camUp.y;
-		cam[2][2] = camUp.z;
+		cam[2][0] = static_cast<float>(norm.x);
+		cam[2][1] = static_cast<float>(norm.y);
+		cam[2][2] = static_cast<float>(norm.z);
+
+		//cam[2][0] = 0.0;
+		//cam[2][1] = 1.0f;
+		//cam[2][2] = 0.0;
 
 
 		// PREPARE FOR NEXT ITERATION
-		oldTan = newTan;
-		oldCamUp = camUp;
-		if (coasterPos + 0.01f < splines[0].numControlPoints - 2)
+		//oldTan = newTan;
+		//oldCamUp = camUp;
+
+		if (coasterPos + coasterSpeed/resolution < splinesPoints[0].size() - 1)
 		{
-			coasterPos += 0.01f;
+			coasterPos += coasterSpeed/resolution;
 		}
 	}
+
+	if (SCREENSHOT_MODE)
+	{
+		std::string filename = "screenshots/Frame" + intToStr(++screenshotCounter) + ".jpg";
+		saveScreenshot(filename.c_str());
+	}
+
 
 	// make the screen update 
 	glutPostRedisplay();
@@ -510,7 +538,7 @@ void reshapeFunc(int w, int h)
 	// comput projection matrix
 	myOGLMatrix.SetMatrixMode(OpenGLMatrix::MatrixMode::Projection);
 	myOGLMatrix.LoadIdentity();
-	myOGLMatrix.Perspective(45, (1280.0f / 720.0f), 0.01f, 100.0f);
+	myOGLMatrix.Perspective(45, (1280.0f / 720.0f), 0.01f, 1000.0f);
 
 	// good habit to reset matrix mode
 	myOGLMatrix.SetMatrixMode(OpenGLMatrix::MatrixMode::ModelView);
@@ -527,13 +555,13 @@ void mouseMotionDragFunc(int x, int y)
 	{
 		// translate the landscape
 	case TRANSLATE:
-		if (leftMouseButton)
+		if (leftMouseButton && DEBUG)
 		{
 			// control x,y translation via the left mouse button
 			landTranslate[0] += mousePosDelta[0] * 0.01f;
 			landTranslate[1] -= mousePosDelta[1] * 0.01f;
 		}
-		if (middleMouseButton)
+		if (middleMouseButton && DEBUG)
 		{
 			// control z translation via the middle mouse button
 			landTranslate[2] += mousePosDelta[1] * 0.01f;
@@ -542,13 +570,13 @@ void mouseMotionDragFunc(int x, int y)
 
 		// rotate the landscape
 	case ROTATE:
-		if (leftMouseButton)
+		if (leftMouseButton && DEBUG)
 		{
 			// control x,y rotation via the left mouse button
 			landRotate[0] += mousePosDelta[1];
 			landRotate[1] += mousePosDelta[0];
 		}
-		if (middleMouseButton)
+		if (middleMouseButton && DEBUG)
 		{
 			// control z rotation via the middle mouse button
 			landRotate[2] += mousePosDelta[1];
@@ -557,18 +585,18 @@ void mouseMotionDragFunc(int x, int y)
 
 		// scale the landscape
 	case SCALE:
-		if (leftMouseButton)
+		if (leftMouseButton && DEBUG)
 		{
 			// control x,y scaling via the left mouse button
 			landScale[0] *= 1.0f + mousePosDelta[0] * 0.01f;
 			landScale[1] *= 1.0f - mousePosDelta[1] * 0.01f;
 		}
-		if (middleMouseButton)
+		if (middleMouseButton && DEBUG)
 		{
 			// control z scaling via the middle mouse button
 			landScale[2] *= 1.0f - mousePosDelta[1] * 0.01f;
 		}
-		if (rightMouseButton)
+		if (rightMouseButton && DEBUG)
 		{
 			// control x,z scaling via right mouse button
 			landScale[0] *= 1.0f + mousePosDelta[0] * 0.01f;
@@ -666,10 +694,14 @@ void keyboardFunc(unsigned char key, int x, int y)
 	}
 }
 
-std::vector<Point> splinePointsToCurve(const Spline& spline, float resolution)
+std::vector<Point*> splinePointsToCurve(const Spline& spline, float resolution)
 {
-	std::vector<Point> points;
-	int numLoops = static_cast<int> (1.0f / resolution);
+	std::vector<Point*> points;
+	ofstream myfile;
+	myfile.open("output.csv");
+	myfile << "angleChange,distanceChange,xChange,yChange,zChange" << std::endl;
+	
+
 	// for each group of 4 on the spline
 	for (int i = 0; i < spline.numControlPoints; i++)
 	{
@@ -684,75 +716,267 @@ std::vector<Point> splinePointsToCurve(const Spline& spline, float resolution)
 		Point p3 = spline.points[clampIndex(i + 2, spline.numControlPoints)];
 
 
+		float mag = 0.0f;
+		int sampleRate = 4;
+		for (int j = 0; j < sampleRate-1; j++)
+		{
+			Point diff = getCatmullRomPoint( j * (1.0f/static_cast<float>(sampleRate)), p0, p1, p2, p3)
+				- getCatmullRomPoint((j +1) * (1.0f / static_cast<float>(sampleRate)), p0, p1, p2, p3);
+			mag += diff.Mag();
+		}
+
+		int numLoops = static_cast<int> (mag / resolution) * 10;
+		//float step = 
+
 		for (int j = 0; j < numLoops; j++)
 		{
-			float t = j * resolution;
-			points.push_back(getCatmullRomPoint(t, p0, p1, p2, p3));
+			float t = j / static_cast<float>(numLoops);
+			Point* p = new Point[4];
+			p[0] = getCatmullRomPoint(t, p0, p1, p2, p3); // pos
+			//Point tempTan = getCatmullRomTangent(t, p0, p1, p2, p3);
+			//Point oldTan;
+			/*if (points.size() > 0) {
+				oldTan = points.back()[1];
+			}
+			else {
+				oldTan = Point::Up;
+			}*/
+			//p[1] = oldTan * 0.9 + tempTan * 0.1;  // tan
+			p[1] = getCatmullRomTangent(t, p0, p1, p2, p3);
+			p[1].Normalize(); // normalize the tan
+			p[2] = Point();
+			p[3] = Point();
+
+
+			points.push_back(p);
 		}
 	}
+
+
+
+	// at this point, all of the positions/tangents are calculated, and the Norm/Binorms are zero vectors
+	
+	// calculate all normals, binormals
+	// set first normal to up vector, calc it's binormal
+	points[0][2] = Point::Cross(Point::Cross(points[0][1], Point::Up), points[0][1]);
+	points[0][2].Normalize();
+	points[0][3] = Point::Cross(points[0][1], points[0][2]);
+	points[0][3].Normalize();
+	// for each point
+	for (unsigned i = 1; i < points.size(); ++i)
+	{
+		// NORMAL CALCULATION
+		// norm = CROSS(oldBinorm, currTan)
+		Point temp = Point::Cross(points[i-1][3], points[i][1]);
+		Point upwardFacingNormal = Point::Cross(Point::Cross(points[i][1], Point::Up), points[i][1]);
+		points[i][2] = points[i - 1][2] * 0.3f + temp * 0.4f + upwardFacingNormal* 0.3f;
+		points[i][2].Normalize();
+		// BINORMAL CALCULATION
+		points[i][3] = Point::Cross(points[i][1], points[i][2]);
+		points[i][3].Normalize();
+
+		if (points.size() > 0)
+		{
+			float ang = Point::AngleDeg(points[i-1][2], points[i][2]);
+			Point diff = (points[i - 1][0] - points[i][0]);
+			myfile << ang 
+				<< ',' << diff.Mag()
+				<< ',' << diff.x
+				<< ',' << diff.y
+				<< ',' << diff.z
+				<< std::endl;
+		}
+	}
+	myfile.close();
+
 	return points;
+}
+
+void MakeSplinePlane(Point& p0, Point& p1, Point& p2, Point& p3, std::vector<float>& trisVect, std::vector<float>& uvsVect, int& vertCount)
+{
+	// create 2 triangles, add to trisVect
+	// also set UVs and add those to uvsVect
+	trisVect.push_back(static_cast<float>(p0.x));
+	trisVect.push_back(static_cast<float>(p0.y));
+	trisVect.push_back(static_cast<float>(p0.z));
+	uvsVect.push_back(1.0f);
+	uvsVect.push_back(1.0f);
+	++vertCount;
+	trisVect.push_back(static_cast<float>(p1.x));
+	trisVect.push_back(static_cast<float>(p1.y));
+	trisVect.push_back(static_cast<float>(p1.z));
+	uvsVect.push_back(1.0f);
+	uvsVect.push_back(0.0f); 
+	++vertCount;
+	trisVect.push_back(static_cast<float>(p2.x));
+	trisVect.push_back(static_cast<float>(p2.y));
+	trisVect.push_back(static_cast<float>(p2.z));
+	uvsVect.push_back(0.0f);
+	uvsVect.push_back(0.0f);
+	++vertCount;
+
+	// triangle 2
+	trisVect.push_back(static_cast<float>(p0.x));
+	trisVect.push_back(static_cast<float>(p0.y));
+	trisVect.push_back(static_cast<float>(p0.z));
+	uvsVect.push_back(1.0f);
+	uvsVect.push_back(1.0f);
+	++vertCount;
+	trisVect.push_back(static_cast<float>(p3.x));
+	trisVect.push_back(static_cast<float>(p3.y));
+	trisVect.push_back(static_cast<float>(p3.z));
+	uvsVect.push_back(0.0f);
+	uvsVect.push_back(1.0f);
+	++vertCount;
+	trisVect.push_back(static_cast<float>(p2.x));
+	trisVect.push_back(static_cast<float>(p2.y));
+	trisVect.push_back(static_cast<float>(p2.z));
+	uvsVect.push_back(0.0f);
+	uvsVect.push_back(0.0f);
+	++vertCount;
 }
 
 void initScene(int argc, char *argv[])
 {
 	//printf("start InitScene\n");
 	loadSplines(argv[1]);
-	for (int i = 0; i < numSplines; i++)
+	for (int s = 0; s < numSplines; s++)
 	{
-		printf("Num control points in spline %d: %d.\n", i, splines[i].numControlPoints);
+		printf("Num control points in spline %d: %d.\n", s, splines[s].numControlPoints);
 	}
-	float largestX, largestY, largestZ;
-	float smallestX, smallestY, smallestZ;
+
+	float largestX = std::numeric_limits<float>::min();
+	float largestY = std::numeric_limits<float>::min();
+	float largestZ = std::numeric_limits<float>::min();
+	float smallestX = std::numeric_limits<float>::max();
+	float smallestY = std::numeric_limits<float>::max();
+	float smallestZ = std::numeric_limits<float>::max();
+	std::vector<std::vector<float> > splinesTris;
+	std::vector<std::vector<float> > splinesUVs;
+	std::vector<std::vector<float> > splinesCrossbarTris;
+	std::vector<std::vector<float> > splinesCrossbarUVs;
 	// for each spline
-	for (int i = 0; i < numSplines; i++)
+	for (int s = 0; s < numSplines; s++)
 	{
-		std::vector<Point> points = splinePointsToCurve(splines[i], 0.2f);
-		std::vector<float> posInner;
-		std::vector<float> colorInner;
-		pos.push_back(posInner);
-		color.push_back(colorInner);
+		splinesPoints.push_back(splinePointsToCurve(splines[s], resolution));
+		splinesTris.push_back(std::vector<float>());
+		splinesUVs.push_back(std::vector<float>());
+		splinesCount.push_back(0);
+		splinesCrossbarTris.push_back(std::vector<float>());
+		splinesCrossbarUVs.push_back(std::vector<float>());
+		splinesCrossbarCount.push_back(0);
 
-		float r = (i + 1) / 1 % 2 == 0;
-		float g = (i + 1) / 2 % 2 == 0;
-		float b = (i + 1) / 4 % 2 == 0;
-		// for each point in spline
-		//for (int j = 0; j < splines[i].numControlPoints; j++)
-
-		for (unsigned j = 0; j < points.size(); j++)
+		// for each pair of points in spline
+		for (unsigned p = 1; p < splinesPoints[s].size(); p++)
 		{
-			// add to pos
-			//pos[i].push_back(static_cast<float>(splines[i].points[j].x));
-			//pos[i].push_back(static_cast<float>(splines[i].points[j].y));
-			//pos[i].push_back(static_cast<float>(splines[i].points[j].z));
-			pos[i].push_back(static_cast<float>(points[j].x));
-			pos[i].push_back(static_cast<float>(points[j].y));
-			pos[i].push_back(static_cast<float>(points[j].z));
+			// (use p-1 and p)
+			// generate planes
+			Point pos0 = splinesPoints[s][p - 1][0];
+			Point pos1 = splinesPoints[s][p - 0][0];
+			Point tan0 = splinesPoints[s][p - 1][1];
+			Point tan1 = splinesPoints[s][p - 0][1];
+			Point norm0 = splinesPoints[s][p - 1][2];
+			Point norm1 = splinesPoints[s][p - 0][2];
+			Point binorm0 = splinesPoints[s][p - 1][3];
+			Point binorm1 = splinesPoints[s][p - 0][3];
+			float n = 20.0f;
+			float m = 100.0f;
+			{
+				// left box thing
+				std::vector<Point> planePoints;
+				planePoints.push_back(pos0 + binorm0 / m + norm0 / m - binorm0 / n); // p0 upright left
+				planePoints.push_back(pos0 - binorm0 / m + norm0 / m - binorm0 / n); // p0 upleft left
+				planePoints.push_back(pos0 - binorm0 / m - norm0 / m - binorm0 / n); // p0 downleft left
+				planePoints.push_back(pos0 + binorm0 / m - norm0 / m - binorm0 / n); // p0 downright left
 
-			if (points[j].x > largestX) largestX = static_cast<float>(points[j].x);
-			else if (points[j].x < smallestX) smallestX = static_cast<float>(points[j].x);
-			if (points[j].y > largestY) largestY = static_cast<float>(points[j].y);
-			else if (points[j].y < smallestY) smallestY = static_cast<float>(points[j].y);
-			if (points[j].z > largestZ) largestZ = static_cast<float>(points[j].z);
-			else if (points[j].z < smallestZ) smallestZ = static_cast<float>(points[j].z);
+				planePoints.push_back(pos1 + binorm1 / m + norm1 / m - binorm1 / n); // p1 upright left
+				planePoints.push_back(pos1 - binorm1 / m + norm1 / m - binorm1 / n); // p1 upleft left
+				planePoints.push_back(pos1 - binorm1 / m - norm1 / m - binorm1 / n); // p1 downleft left
+				planePoints.push_back(pos1 + binorm1 / m - norm1 / m - binorm1 / n); // p1 downright left
 
-			// add to color
-			color[i].push_back(r);
-			color[i].push_back(g);
-			color[i].push_back(b);
-			color[i].push_back(0.0f);
-		}
-		//printf("pos[%d].size() = %d; color[%d].size() = %d\n", i, pos[i].size(), i, color[i].size());
-	}
+				// actually generate planes and put them into splinesTris and splinesUVs
+				MakeSplinePlane(planePoints[0], planePoints[1], planePoints[5], planePoints[4], splinesTris[s], splinesUVs[s], splinesCount[s]); // top plane
+				MakeSplinePlane(planePoints[1], planePoints[2], planePoints[6], planePoints[5], splinesTris[s], splinesUVs[s], splinesCount[s]); // left plane
+				MakeSplinePlane(planePoints[2], planePoints[3], planePoints[7], planePoints[6], splinesTris[s], splinesUVs[s], splinesCount[s]); // bot plane
+				MakeSplinePlane(planePoints[3], planePoints[0], planePoints[4], planePoints[7], splinesTris[s], splinesUVs[s], splinesCount[s]); // right plane
+			}
+			{
+				// right box thing
+				std::vector<Point> planePoints;
+				planePoints.push_back(pos0 + binorm0 / m + norm0 / m + binorm0 / n); // p0 upright right
+				planePoints.push_back(pos0 - binorm0 / m + norm0 / m + binorm0 / n); // p0 upleft right
+				planePoints.push_back(pos0 - binorm0 / m - norm0 / m + binorm0 / n); // p0 downleft right
+				planePoints.push_back(pos0 + binorm0 / m - norm0 / m + binorm0 / n); // p0 downright right
 
+				planePoints.push_back(pos1 + binorm1 / m + norm1 / m + binorm1 / n); // p1 upright right
+				planePoints.push_back(pos1 - binorm1 / m + norm1 / m + binorm1 / n); // p1 upleft right
+				planePoints.push_back(pos1 - binorm1 / m - norm1 / m + binorm1 / n); // p1 downleft right
+				planePoints.push_back(pos1 + binorm1 / m - norm1 / m + binorm1 / n); // p1 downright right
 
+				// actually generate planes and put them into splinesTris and splinesUVs
+				MakeSplinePlane(planePoints[0], planePoints[1], planePoints[5], planePoints[4], splinesTris[s], splinesUVs[s], splinesCount[s]); // top plane
+				MakeSplinePlane(planePoints[1], planePoints[2], planePoints[6], planePoints[5], splinesTris[s], splinesUVs[s], splinesCount[s]); // left plane
+				MakeSplinePlane(planePoints[2], planePoints[3], planePoints[7], planePoints[6], splinesTris[s], splinesUVs[s], splinesCount[s]); // bot plane
+				MakeSplinePlane(planePoints[3], planePoints[0], planePoints[4], planePoints[7], splinesTris[s], splinesUVs[s], splinesCount[s]); // right plane
+			}
+			{
+				// left box thing
+				std::vector<Point> planePoints;
+				planePoints.push_back(pos0 + binorm0 / m + norm0 / m - binorm0 / n); // p0 upright left
+				planePoints.push_back(pos0 - binorm0 / m + norm0 / m - binorm0 / n); // p0 upleft left
+				planePoints.push_back(pos0 - binorm0 / m - norm0 / m - binorm0 / n); // p0 downleft left
+				planePoints.push_back(pos0 + binorm0 / m - norm0 / m - binorm0 / n); // p0 downright left
 
+				planePoints.push_back(pos1 + binorm1 / m + norm1 / m - binorm1 / n); // p1 upright left
+				planePoints.push_back(pos1 - binorm1 / m + norm1 / m - binorm1 / n); // p1 upleft left
+				planePoints.push_back(pos1 - binorm1 / m - norm1 / m - binorm1 / n); // p1 downleft left
+				planePoints.push_back(pos1 + binorm1 / m - norm1 / m - binorm1 / n); // p1 downright left
 
+				// actually generate planes and put them into splinesTris and splinesUVs
+				MakeSplinePlane(planePoints[0], planePoints[1], planePoints[5], planePoints[4], splinesTris[s], splinesUVs[s], splinesCount[s]); // top plane
+				MakeSplinePlane(planePoints[1], planePoints[2], planePoints[6], planePoints[5], splinesTris[s], splinesUVs[s], splinesCount[s]); // left plane
+				MakeSplinePlane(planePoints[2], planePoints[3], planePoints[7], planePoints[6], splinesTris[s], splinesUVs[s], splinesCount[s]); // bot plane
+				MakeSplinePlane(planePoints[3], planePoints[0], planePoints[4], planePoints[7], splinesTris[s], splinesUVs[s], splinesCount[s]); // right plane
+			}
+			int modMe = static_cast<int>(2.0 / resolution);
+			if(p % modMe == 0)
+			{
+				// crossbar
+				std::vector<Point> planePoints;
+				planePoints.push_back(pos0 - tan0/m - binorm0 / m + norm0 / m/2 + binorm0 / n); // p0 upleft right
+				planePoints.push_back(pos0 - tan0 / m - binorm0 / m - norm0 / m/2 + binorm0 / n); // p0 downleft right
+				planePoints.push_back(pos0 + tan0 / m - binorm0 / m - norm0 / m/2 + binorm0 / n); // p1 downleft right
+				planePoints.push_back(pos0 + tan0 / m - binorm0 / m + norm0 / m/2 + binorm0 / n); // p1 upleft right
 
+				planePoints.push_back(pos0 - tan0/m + binorm0 / m + norm0 / m/2 - binorm0 / n); // p0 upright left
+				planePoints.push_back(pos0 - tan0/m + binorm0 / m - norm0 / m/2 - binorm0 / n); // p0 downright left
+				planePoints.push_back(pos0 + tan0/m + binorm0 / m - norm0 / m/2 - binorm0 / n); // p1 downright left
+				planePoints.push_back(pos0 + tan0/m + binorm0 / m + norm0 / m/2 - binorm0 / n); // p1 upright left
 
-	//printf("pos.size() = %d\n", pos.size());
-	/*int x = 6;
-	printf("%f, %f, %f\n", pos[2].data()[x + 0], pos[2].data()[x + 1], pos[2].data()[x + 2]);*/
-
+				// actually generate planes and put them into splinesTris and splinesUVs
+				MakeSplinePlane(planePoints[0], planePoints[1], planePoints[5], planePoints[4], splinesCrossbarTris[s], splinesCrossbarUVs[s], splinesCrossbarCount[s]); // top plane
+				MakeSplinePlane(planePoints[1], planePoints[2], planePoints[6], planePoints[5], splinesCrossbarTris[s], splinesCrossbarUVs[s], splinesCrossbarCount[s]); // left plane
+				MakeSplinePlane(planePoints[2], planePoints[3], planePoints[7], planePoints[6], splinesCrossbarTris[s], splinesCrossbarUVs[s], splinesCrossbarCount[s]); // bot plane
+				MakeSplinePlane(planePoints[3], planePoints[0], planePoints[4], planePoints[7], splinesCrossbarTris[s], splinesCrossbarUVs[s], splinesCrossbarCount[s]); // right plane
+			}
+			// calculating how big our skybox should be
+			if (pos1.x > largestX) largestX = static_cast<float>(pos1.x);
+			else if (pos1.x < smallestX) smallestX = static_cast<float>(pos1.x);
+			if (pos1.y > largestY) largestY = static_cast<float>(pos1.y);
+			else if (pos1.y < smallestY) smallestY = static_cast<float>(pos1.y);
+			if (pos1.z > largestZ) largestZ = static_cast<float>(pos1.z);
+			else if (pos1.z < smallestZ) smallestZ = static_cast<float>(pos1.z);
+		} // for each point pair in spline s
+		//std::string str =
+		//	"Spline %d:\n"
+		//	"   numControlPoints: %d, numPoints: %d\n"
+		//	"   num vert floats: %d, num uv floats: %d\n"
+		//	"   splinesCount: %d, math num verts: %d\n";
+		//printf(str.c_str(), s, splines[s].numControlPoints, splinesPoints[s].size(), 
+		//	splinesTris[s].size(), splinesUVs[s].size(), splinesCount[s],
+		//	(splinesPoints[s].size() -1) * 4 * 6);
+	} // for each spline
+	//printf("finished all them spline loops\n");
 
 	//pipelineProgram.Init("../openGLHelper-starterCode", false);
 	pipelineProgram.Init("../openGLHelper-starterCode", true);
@@ -760,78 +984,117 @@ void initScene(int argc, char *argv[])
 	pipelineProgram.Bind();
 	GLuint program = pipelineProgram.GetProgramHandle();
 
-
-
-	// iniialize VBOs and VAOs
-	for (int i = 0; i < numSplines; i++)
+	// iniialize splines VBOs and VAOs
+	for (int s = 0; s < numSplines; s++)
 	{
-		// VBO
-		GLuint vbo;
-		glGenBuffers(1, &vbo);
-		glBindBuffer(GL_ARRAY_BUFFER, vbo);
-		//glBufferData(GL_ARRAY_BUFFER, sizeof(float) * (pos[i].size() + color[i].size()), NULL, GL_STATIC_DRAW);
-		glBufferData(GL_ARRAY_BUFFER, sizeof(float) * (pos[i].size()), NULL, GL_STATIC_DRAW);
-		glBufferSubData(GL_ARRAY_BUFFER, 0, sizeof(float)*pos[i].size(), pos[i].data());
-		//glBufferSubData(GL_ARRAY_BUFFER, sizeof(float) * pos[i].size(), sizeof(float) * color[i].size(), color[i].data()
+		// VBO - metal
+		GLuint vboMetal;
+		glGenBuffers(1, &vboMetal);
+		glBindBuffer(GL_ARRAY_BUFFER, vboMetal);
+		glBufferData(GL_ARRAY_BUFFER, sizeof(float) * (splinesTris[s].size() + splinesUVs[s].size()), NULL, GL_STATIC_DRAW);
+		glBufferSubData(GL_ARRAY_BUFFER, 0, sizeof(float)*splinesTris[s].size(), splinesTris[s].data());
+		glBufferSubData(GL_ARRAY_BUFFER, sizeof(float)*splinesTris[s].size(), sizeof(float)*splinesUVs[s].size(), splinesUVs[s].data());
 
-		// VAO
-		GLuint vao;
-		glGenVertexArrays(1, &vao);
-		glBindVertexArray(vao);
-		glBindBuffer(GL_ARRAY_BUFFER, vbo);
+		// VBO - wood
+		GLuint vboWood;
+		glGenBuffers(1, &vboWood);
+		glBindBuffer(GL_ARRAY_BUFFER, vboWood);
+		glBufferData(GL_ARRAY_BUFFER, sizeof(float) * (splinesCrossbarTris[s].size() + splinesCrossbarUVs[s].size()), NULL, GL_STATIC_DRAW);
+		glBufferSubData(GL_ARRAY_BUFFER, 0, sizeof(float)*splinesCrossbarTris[s].size(), splinesCrossbarTris[s].data());
+		glBufferSubData(GL_ARRAY_BUFFER, sizeof(float)*splinesCrossbarTris[s].size(), sizeof(float)*splinesCrossbarUVs[s].size(), splinesCrossbarUVs[s].data());
+
+		// VAO - metal
+		GLuint vaoMetal;
+		glGenVertexArrays(1, &vaoMetal);
+		glBindVertexArray(vaoMetal);
+		glBindBuffer(GL_ARRAY_BUFFER, vboMetal);
 		GLuint loc = glGetAttribLocation(program, "position");
 		glEnableVertexAttribArray(loc); // enable the "position" attribute
 		const void* offset = static_cast<const void*>(0);
 		GLsizei stride = 0;
 		GLboolean normalized = GL_FALSE;
 		glVertexAttribPointer(loc, 3, GL_FLOAT, normalized, stride, offset);
-		//loc = glGetAttribLocation(program, "color");
-		//glEnableVertexAttribArray(loc); // enable the "color" attribute
-		//offset = (const void*)(sizeof(float) * pos[i].size());
-		//stride = 0;
-		//normalized = GL_FALSE;
-		//glVertexAttribPointer(loc, 4, GL_FLOAT, normalized, stride, offset);
+		loc = glGetAttribLocation(program, "texCoord");
+		glEnableVertexAttribArray(loc); // enable the "texCoord" attribute
+		offset = (const void*)(sizeof(float)*splinesTris[s].size());
+		stride = 0;
+		normalized = GL_FALSE;
+		glVertexAttribPointer(loc, 2, GL_FLOAT, normalized, stride, offset);
+		splinesVaos.push_back(vaoMetal);
+		glBindVertexArray(0); // unbind VAO
 
-		splineVaos.push_back(vao);
+		// VAO - wood
+		GLuint vaoWood;
+		glGenVertexArrays(1, &vaoWood);
+		glBindVertexArray(vaoWood);
+		glBindBuffer(GL_ARRAY_BUFFER, vboWood);
+		loc = glGetAttribLocation(program, "position");
+		glEnableVertexAttribArray(loc);
+		offset = static_cast<const void*> (0);
+		stride = 0;
+		normalized = GL_FALSE;
+		glVertexAttribPointer(loc, 3, GL_FLOAT, normalized, stride, offset);
+		loc = glGetAttribLocation(program, "texCoord");
+		glEnableVertexAttribArray(loc);
+		offset = (const void*)(sizeof(float)*splinesCrossbarTris[s].size());
+		stride = 0;
+		normalized = GL_FALSE;
+		glVertexAttribPointer(loc, 2, GL_FLOAT, normalized, stride, offset);
+		splinesCrossbarVaos.push_back(vaoWood);
 		glBindVertexArray(0); // unbind VAO
 	}
 
 
 	// LOAD TEXTURES
 	{
-		std::string waterFilename = "water.jpg";
+		std::string grassFilename = "grass.jpg";
 		std::string metalFilename = "metal.jpg";
 		std::string woodFilename = "wood.jpg";
-		std::string skyFilename = "sky.jpg";
+		std::string skyFilename = "skybox.jpg";
+		int switcher = rand() % 4;
+		switcher = 1;
+		switch (switcher)
+		{
+		case 0:
+			skyFilename = "skybox.jpg";
+			break;
+		case 1:
+			skyFilename = "skybox1.jpg";
+			break;
+		case 2:
+			skyFilename = "skybox3.jpg";
+			break;
+		case 3:
+			skyFilename = "skyboxSpace1.jpg";
+			break;
+		}
 
-		glGenTextures(1, &waterTexture);
+		glGenTextures(1, &grassTexture);
 		glGenTextures(1, &metalTexture);
 		glGenTextures(1, &woodTexture);
 		glGenTextures(1, &skyTexture);
 
-		int code = initTexture(waterFilename.c_str(), waterTexture);
+		int code = initTexture(grassFilename.c_str(), grassTexture);
 		if (code != 0)
 		{
-			printf(">Error loading the texture image @ %s.\n", waterFilename.c_str());
+			printf(">Error loading the texture image @ %s.\n", grassFilename.c_str());
 			exit(EXIT_FAILURE);
 		}
 		else
 		{
-			printf(">loaded %s, with code %d.\n", waterFilename.c_str(), code);
+			printf(">loaded %s, with code %d.\n", grassFilename.c_str(), code);
 		}
-
 
 		code = initTexture(metalFilename.c_str(), metalTexture);
 		if (code != 0)
 		{
-			printf(">Error loading the texture image @ %s.\n", waterFilename.c_str());
+			printf(">Error loading the texture image @ %s.\n", metalFilename.c_str());
 			exit(EXIT_FAILURE);
 		}
 		else
 		{
 			printf(">loaded %s, with code %d.\n", metalFilename.c_str(), code);
 		}
-
 
 		code = initTexture(woodFilename.c_str(), woodTexture);
 		if (code != 0)
@@ -844,11 +1107,10 @@ void initScene(int argc, char *argv[])
 			printf(">loaded %s, with code %d.\n", woodFilename.c_str(), code);
 		}
 
-
 		code = initTexture(skyFilename.c_str(), skyTexture);
 		if (code != 0)
 		{
-			printf(">Error loading the texture image @ %s.\n", waterFilename.c_str());
+			printf(">Error loading the texture image @ %s.\n", skyFilename.c_str());
 			exit(EXIT_FAILURE);
 		}
 		else
@@ -858,40 +1120,58 @@ void initScene(int argc, char *argv[])
 	}
 
 
-	// MAKE WATER AND SKYBOX
+	// MAKE GRASS AND SKYBOX
 
 	{
 		// amount of padding we get around the rollercoaster (x,y,z)
 		const float padding[3] = { 3.0f, 1.0f, 3.0f };
-		const float bigX = largestX + padding[0];
-		const float smallX = smallestX - padding[0];
-		const float topY = largestY + padding[1];
-		const float floorY = smallestY < 0.0f ? smallestY - padding[1] : 0.0f;
-		const float bigZ = largestZ + padding[2];
-		const float smallZ = smallestZ - padding[2];
-		printf("big: %f %f %f\n", bigX, topY, bigZ);
-		printf("small: %f %f %f\n", smallX, floorY, smallZ);
+		float extent = abs(largestX - smallestX) + padding[0]*2;
+		if(abs(largestY-smallestY) + padding[1]*2 > extent)
+			extent = abs(largestY - smallestY) + padding[1]*2;
+		if (abs(largestZ - smallestZ) + padding[2]*2 > extent)
+			extent = abs(largestZ - smallestZ) + padding[2]*2;
+		extent *= 2;
+		Point center((largestX+smallestX)/2.0, (largestY+smallestY)/2.0, (largestZ+smallestZ)/2.0);
+		//const float bigX = largestX + padding[0];
+		//const float smallX = smallestX - padding[0];
+		//const float topY = largestY + padding[1];
+		//const float floorY = smallestY < 0.0f ? smallestY - padding[1] : 0.0f;
+		//const float bigZ = largestZ + padding[2];
+		//const float smallZ = smallestZ - padding[2];
+		//printf("big: %f %f %f\n", bigX, topY, bigZ);
+		//printf("small: %f %f %f\n", smallX, floorY, smallZ);
+		const float bigX = static_cast<float>(center.x + extent);
+		const float smallX = static_cast<float>(center.x - extent);
+		const float topY = static_cast<float>(center.y + extent);
+		const float floorY = static_cast<float>(center.y - extent);
+		const float bigZ = static_cast<float>(center.z + extent);
+		const float smallZ = static_cast<float>(center.z - extent);
 
-		const float waterPos[2][3][3] =
+		const float grassPos[2*3][3] =
 		{
 			// 2 triangles
-			{
-				// each triangle has 3 points
-				// each point has 3 floats
-				{bigX, floorY, bigZ},
-				{bigX, floorY, smallZ},
-				{smallX, floorY, bigZ}
-			}
-			,
-			{
-				{ smallX, floorY, smallZ},
-				{ bigX, floorY, smallZ},
-				{ smallX, floorY, bigZ}
-			}
+			// each triangle has 3 points
+			// each point has 3 floats
+			{bigX, floorY, bigZ},
+			{bigX, floorY, smallZ},
+			{smallX, floorY, bigZ},
+			
+			{ smallX, floorY, smallZ},
+			{ bigX, floorY, smallZ},
+			{ smallX, floorY, bigZ}
+			
 		};
-		const float skyPos[5 * 2 * 3][3] =
+		const float skyPos[6 * 2 * 3][3] =
 		{
-			// 5 sides, 2 tris, 3 points, with 3 floats each
+			// 6 sides, 2 tris, 3 points, with 3 floats each
+			// bot
+			{ bigX, floorY, bigZ },
+			{ bigX, floorY, smallZ },
+			{ smallX, floorY, bigZ },
+
+			{ smallX, floorY, smallZ },
+			{ bigX, floorY, smallZ },
+			{ smallX, floorY, bigZ },
 			// top
 			{bigX, topY, bigZ},
 			{bigX, topY, smallZ},
@@ -902,13 +1182,13 @@ void initScene(int argc, char *argv[])
 			{ smallX, topY, bigZ },
 
 			//, // x forward
-			{ bigX, topY, bigZ },
 			{ bigX, topY, smallZ },
-			{ bigX, floorY, bigZ },
-
 			{ bigX, floorY, smallZ },
-			{ bigX, topY, smallZ },
+			{ bigX, topY, bigZ },
+
 			{ bigX, floorY, bigZ },
+			{ bigX, floorY, smallZ },
+			{ bigX, topY, bigZ },
 
 			//, // x backward
 			{ smallX, topY, bigZ },
@@ -939,81 +1219,96 @@ void initScene(int argc, char *argv[])
 		};
 
 
-		const float waterUVs[2][3][2] =
+		const float grassUVs[2*3][2] =
 		{
 			// 2 triangles
-			{
-				// each triangle has 3 points
-				// each point has 2 floats
-				{ 1.0f, 1.0f },
-				{ 1.0f, -1.0f },
-				{ -1.0f, 1.0f }
-			}
-			,
-			{
-				{ -1.0f, -1.0f },
-				{ 1.0f, -1.0f },
-				{ -1.0f, 1.0f }
-			}
+			// each triangle has 3 points
+			// each point has 2 floats
+			{ 5.0f, 5.0f },
+			{ 5.0f, -5.0f },
+			{ -5.0f, 5.0f },
+		
+			{ -5.0f, -5.0f },
+			{ 5.0f, -5.0f },
+			{ -5.0f, 5.0f }
+			
 		};
 
-		const float SkyUVs[5 * 2 * 3][2] =
+		const float SkyUVs[6 * 2 * 3][2] =
 		{
-			// 5 sides, 2 tris, 3 points, with 2 floats each
-			// top
-			{ 1.0f, 1.0f },
-			{ 1.0f, -1.0f },
-			{ -1.0f, 1.0f },
+			// 6 sides, 2 tris, 3 points, with 2 floats each
+			// bot
+			{ 0.5f, 1/3.0f },
+			{ 0.5f, 0.0f },
+			{ 0.25f, 1 / 3.0f },
 
-			{ -1.0f, -1.0f },
-			{ 1.0f, -1.0f },
-			{ -1.0f, 1.0f },
+			{ 0.25f, 0.0f },
+			{ 0.5f, 0.0f },
+			{ 0.25f, 1 / 3.0f },
+
+			// top
+			{ 0.5f, 2 / 3.0f }, // 4
+			{ 0.5f, 1.0f }, // 1
+			{ 0.25f, 2 / 3.0f }, // 3
+
+			{ 0.25f, 1.0f }, // 2
+			{ 0.5f, 1.0f }, // 1
+			{ 0.25f, 2 / 3.0f }, // 3
+
 
 			//, // x forward
-			{ 1.0f, 1.0f },
-			{ 1.0f, -1.0f},
-			{ -1.0f, 1.0f },
+			{ 0.75f, 2 / 3.0f },
+			{ 0.75f, 1 / 3.0f },
+			{ 0.5f, 2 / 3.0f },
 
-			{ -1.0f, -1.0f },
-			{ 1.0f, -1.0f },
-			{ -1.0f, 1.0f },
+			{ 0.5f, 1 / 3.0f },
+			{ 0.75f, 1 / 3.0f },
+			{ 0.5f, 2 / 3.0f }, // yes
 
 			//, // x backward
-			{ 1.0f, 1.0f},
-			{ 1.0f, -1.0f },
-			{ -1.0f, 1.0f },
+			{ 0.25f, 2 / 3.0f }, // 1
+			{ 0.0f, 2 / 3.0f }, // 2
+			{ 0.25f, 1 / 3.0f }, // 4
 
-			{ -1.0f, -1.0f},
-			{ 1.0f, -1.0f },
-			{ -1.0f, 1.0f },
+			{ 0.0f, 1 / 3.0f }, // 3
+			{ 0.0f, 2 / 3.0f }, // 2
+			{ 0.25f, 1 / 3.0f }, // 4
 
 			//, // z forward
-			{ 1.0f,1.0f },
-			{ 1.0f,-1.0f },
-			{ -1.0f,1.0f },
+			{ 0.5f, 2 / 3.0f }, // 1
+			{ 0.5f, 1 / 3.0f }, // 4
+			{ 0.25f, 2 / 3.0f }, // 2
 			
-			{ -1.0f,-1.0f },
-			{ 1.0f,-1.0f },
-			{ -1.0f,1.0f},
+			{ 0.25f, 1 / 3.0f }, // 3
+			{ 0.5f, 1 / 3.0f }, // 4
+			{ 0.25f, 2 / 3.0f }, // 2
 
 			//, // z backward
-			{ 1.0f,1.0f },
-			{ 1.0f,-1.0f },
-			{ -1.0f,1.0f },
+			// 3 > 2
+			// 4 > 3
+			// 2 > 1
 
-			{ -1.0f,-1.0f },
-			{ 1.0f,-1.0f },
-			{ -1.0f,1.0f}
+			// 1 > 4
+			// 4 > 3
+			// 2 > 1
+
+			{ 0.75f, 2 / 3.0f }, // 2
+			{ 0.75f, 1 / 3.0f }, // 3
+			{ 1.0f, 2 / 3.0f }, // 1
+
+			{ 1.0f, 1 / 3.0f }, // 4
+			{ 0.75f, 1 / 3.0f }, // 3
+			{ 1.0f, 2 / 3.0f } // 1
 		};
 
-		// WATER VBO
-		GLuint waterVBO;
+		// GRASS VBO
+		GLuint grassVBO;
 		//std::cout << "sizeof pos: " << sizeof(pos) << "\nsizeof tex: " << sizeof(tex) << std::endl;
-		glGenBuffers(1, &waterVBO);
-		glBindBuffer(GL_ARRAY_BUFFER, waterVBO);
-		glBufferData(GL_ARRAY_BUFFER, (sizeof(waterPos) + sizeof(waterUVs)), NULL, GL_STATIC_DRAW);
-		glBufferSubData(GL_ARRAY_BUFFER, 0, sizeof(waterPos), waterPos);
-		glBufferSubData(GL_ARRAY_BUFFER, sizeof(waterPos), sizeof(waterUVs), waterUVs);
+		glGenBuffers(1, &grassVBO);
+		glBindBuffer(GL_ARRAY_BUFFER, grassVBO);
+		glBufferData(GL_ARRAY_BUFFER, (sizeof(grassPos) + sizeof(grassUVs)), NULL, GL_STATIC_DRAW);
+		glBufferSubData(GL_ARRAY_BUFFER, 0, sizeof(grassPos), grassPos);
+		glBufferSubData(GL_ARRAY_BUFFER, sizeof(grassPos), sizeof(grassUVs), grassUVs);
 
 		// SKY VBO
 		GLuint skyVBO;
@@ -1023,10 +1318,10 @@ void initScene(int argc, char *argv[])
 		glBufferSubData(GL_ARRAY_BUFFER, 0, sizeof(skyPos), skyPos);
 		glBufferSubData(GL_ARRAY_BUFFER, sizeof(skyPos), sizeof(SkyUVs), SkyUVs);
 		
-		// WATER VAO
-		glGenVertexArrays(1, &vaoWater);
-		glBindVertexArray(vaoWater);
-		glBindBuffer(GL_ARRAY_BUFFER, waterVBO);
+		// GRASS VAO
+		glGenVertexArrays(1, &vaoGrass);
+		glBindVertexArray(vaoGrass);
+		glBindBuffer(GL_ARRAY_BUFFER, grassVBO);
 		GLuint loc = glGetAttribLocation(program, "position");
 		glEnableVertexAttribArray(loc); // enable the "position" attribute
 		const void* offset = static_cast<const void*>(0);
@@ -1035,7 +1330,7 @@ void initScene(int argc, char *argv[])
 		glVertexAttribPointer(loc, 3, GL_FLOAT, normalized, stride, offset);
 		loc = glGetAttribLocation(program, "texCoord");
 		glEnableVertexAttribArray(loc); // enable the "textCoord" attribute
-		offset = (const void*)(sizeof(waterPos));
+		offset = (const void*)(sizeof(grassPos));
 		stride = 0;
 		normalized = GL_FALSE;
 		glVertexAttribPointer(loc, 2, GL_FLOAT, normalized, stride, offset);
@@ -1060,11 +1355,6 @@ void initScene(int argc, char *argv[])
 
 		glBindVertexArray(0); // unbind VAO
 	}
-
-
-
-
-	
 
 	//printf("end Init \n");
 }
