@@ -70,5 +70,7 @@ Keyboard/Mouse controls: (Please document Keyboard/Mouse controls if any)
 Names of the .cpp files you made changes to:
 1. hw2.cpp
 2. Spline.h (kept adding functionality to the Point class until it became equivalent to a Vector3 class)
+3. openGLHelper-starterCode/texture.fragmentShader.glsl
+4. openGLHelper-starterCode/texture.vertexShader.glsl
 
 Comments : N/A
