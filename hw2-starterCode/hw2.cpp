@@ -471,27 +471,11 @@ void idleFunc()
 		int integer = static_cast<int> (integerTemp);
 
 		Point pos = Point::Lerp(splinesPoints[0][integer - 1][0], splinesPoints[0][integer][0], fraction);
-		//Point pos = getCatmullRomPoint(fraction, splines[0].points[integer - 1], splines[0].points[integer], 
-		//	splines[0].points[integer + 1], splines[0].points[integer + 2]);
-		//
-		//Point tan = getCatmullRomTangent(fraction, splines[0].points[integer - 1], splines[0].points[integer],
-		//	splines[0].points[integer + 1], splines[0].points[integer + 2]);
 		Point tan = Point::Lerp(splinesPoints[0][integer - 1][1], splinesPoints[0][integer][1], fraction);
-
-		//Point tanDif(newTan.x - oldTan.x, newTan.y - oldTan.y, newTan.z - oldTan.z);
-
-		//tanDif.Normalize();
-
-		//Point norm = 
 		Point norm = Point::Lerp(splinesPoints[0][integer - 1][2], splinesPoints[0][integer][2], fraction);
-		////Point camUp = Point(oldCamUp.x + tanDif.x, oldCamUp.y + tanDif.y, oldCamUp.z + tanDif.z);
-		//Point camUp = Point::Lerp(oldCamUp, camUp, 0.03f);
-		//camUp = newTan.Orthogonalize(camUp);
-		//camUp.Normalize();
 
 		// SET CAMERA LOOK AT
 		Point finalPos = pos + (norm / 15.0f);
-		//Point finalPos = pos + Point::Up / 15.0f;
 		cam[0][0] = static_cast<float>(finalPos.x);
 		cam[0][1] = static_cast<float>(finalPos.y);
 		cam[0][2] = static_cast<float>(finalPos.z);
@@ -504,15 +488,6 @@ void idleFunc()
 		cam[2][0] = static_cast<float>(norm.x);
 		cam[2][1] = static_cast<float>(norm.y);
 		cam[2][2] = static_cast<float>(norm.z);
-
-		//cam[2][0] = 0.0;
-		//cam[2][1] = 1.0f;
-		//cam[2][2] = 0.0;
-
-
-		// PREPARE FOR NEXT ITERATION
-		//oldTan = newTan;
-		//oldCamUp = camUp;
 
 		if (coasterPos + coasterSpeed/resolution < splinesPoints[0].size() - 1)
 		{
@@ -733,15 +708,6 @@ std::vector<Point*> splinePointsToCurve(const Spline& spline, float resolution)
 			float t = j / static_cast<float>(numLoops);
 			Point* p = new Point[4];
 			p[0] = getCatmullRomPoint(t, p0, p1, p2, p3); // pos
-			//Point tempTan = getCatmullRomTangent(t, p0, p1, p2, p3);
-			//Point oldTan;
-			/*if (points.size() > 0) {
-				oldTan = points.back()[1];
-			}
-			else {
-				oldTan = Point::Up;
-			}*/
-			//p[1] = oldTan * 0.9 + tempTan * 0.1;  // tan
 			p[1] = getCatmullRomTangent(t, p0, p1, p2, p3);
 			p[1].Normalize(); // normalize the tan
 			p[2] = Point();
@@ -838,7 +804,6 @@ void MakeSplinePlane(Point& p0, Point& p1, Point& p2, Point& p3, std::vector<flo
 
 void initScene(int argc, char *argv[])
 {
-	//printf("start InitScene\n");
 	loadSplines(argv[1]);
 	for (int s = 0; s < numSplines; s++)
 	{
@@ -967,18 +932,9 @@ void initScene(int argc, char *argv[])
 			if (pos1.z > largestZ) largestZ = static_cast<float>(pos1.z);
 			else if (pos1.z < smallestZ) smallestZ = static_cast<float>(pos1.z);
 		} // for each point pair in spline s
-		//std::string str =
-		//	"Spline %d:\n"
-		//	"   numControlPoints: %d, numPoints: %d\n"
-		//	"   num vert floats: %d, num uv floats: %d\n"
-		//	"   splinesCount: %d, math num verts: %d\n";
-		//printf(str.c_str(), s, splines[s].numControlPoints, splinesPoints[s].size(), 
-		//	splinesTris[s].size(), splinesUVs[s].size(), splinesCount[s],
-		//	(splinesPoints[s].size() -1) * 4 * 6);
+		
 	} // for each spline
-	//printf("finished all them spline loops\n");
 
-	//pipelineProgram.Init("../openGLHelper-starterCode", false);
 	pipelineProgram.Init("../openGLHelper-starterCode", true);
 
 	pipelineProgram.Bind();
@@ -1121,7 +1077,6 @@ void initScene(int argc, char *argv[])
 
 
 	// MAKE GRASS AND SKYBOX
-
 	{
 		// amount of padding we get around the rollercoaster (x,y,z)
 		const float padding[3] = { 3.0f, 1.0f, 3.0f };
@@ -1132,14 +1087,6 @@ void initScene(int argc, char *argv[])
 			extent = abs(largestZ - smallestZ) + padding[2]*2;
 		extent *= 2;
 		Point center((largestX+smallestX)/2.0, (largestY+smallestY)/2.0, (largestZ+smallestZ)/2.0);
-		//const float bigX = largestX + padding[0];
-		//const float smallX = smallestX - padding[0];
-		//const float topY = largestY + padding[1];
-		//const float floorY = smallestY < 0.0f ? smallestY - padding[1] : 0.0f;
-		//const float bigZ = largestZ + padding[2];
-		//const float smallZ = smallestZ - padding[2];
-		//printf("big: %f %f %f\n", bigX, topY, bigZ);
-		//printf("small: %f %f %f\n", smallX, floorY, smallZ);
 		const float bigX = static_cast<float>(center.x + extent);
 		const float smallX = static_cast<float>(center.x - extent);
 		const float topY = static_cast<float>(center.y + extent);
@@ -1255,7 +1202,6 @@ void initScene(int argc, char *argv[])
 			{ 0.5f, 1.0f }, // 1
 			{ 0.25f, 2 / 3.0f }, // 3
 
-
 			//, // x forward
 			{ 0.75f, 2 / 3.0f },
 			{ 0.75f, 1 / 3.0f },
@@ -1284,14 +1230,6 @@ void initScene(int argc, char *argv[])
 			{ 0.25f, 2 / 3.0f }, // 2
 
 			//, // z backward
-			// 3 > 2
-			// 4 > 3
-			// 2 > 1
-
-			// 1 > 4
-			// 4 > 3
-			// 2 > 1
-
 			{ 0.75f, 2 / 3.0f }, // 2
 			{ 0.75f, 1 / 3.0f }, // 3
 			{ 1.0f, 2 / 3.0f }, // 1
@@ -1303,7 +1241,6 @@ void initScene(int argc, char *argv[])
 
 		// GRASS VBO
 		GLuint grassVBO;
-		//std::cout << "sizeof pos: " << sizeof(pos) << "\nsizeof tex: " << sizeof(tex) << std::endl;
 		glGenBuffers(1, &grassVBO);
 		glBindBuffer(GL_ARRAY_BUFFER, grassVBO);
 		glBufferData(GL_ARRAY_BUFFER, (sizeof(grassPos) + sizeof(grassUVs)), NULL, GL_STATIC_DRAW);
@@ -1355,8 +1292,6 @@ void initScene(int argc, char *argv[])
 
 		glBindVertexArray(0); // unbind VAO
 	}
-
-	//printf("end Init \n");
 }
 
 int main(int argc, char *argv[])
@@ -1368,10 +1303,7 @@ int main(int argc, char *argv[])
 		exit(0);
 	}
 
-	//cout << "Initializing GLUT..." << endl;
 	glutInit(&argc, argv);
-
-	//cout << "Initializing OpenGL..." << endl;
 
 #ifdef __APPLE__
 	glutInitDisplayMode(GLUT_3_2_CORE_PROFILE | GLUT_DOUBLE | GLUT_RGB | GLUT_DEPTH | GLUT_STENCIL);
@@ -1382,10 +1314,6 @@ int main(int argc, char *argv[])
 	glutInitWindowSize(windowWidth, windowHeight);
 	glutInitWindowPosition(0, 0);
 	glutCreateWindow(windowTitle);
-
-	//cout << "OpenGL Version: " << glGetString(GL_VERSION) << endl;
-	//cout << "OpenGL Renderer: " << glGetString(GL_RENDERER) << endl;
-	//cout << "Shading Language Version: " << glGetString(GL_SHADING_LANGUAGE_VERSION) << endl;
 
 	// tells glut to use a particular display function to redraw 
 	glutDisplayFunc(displayFunc);
@@ -1416,7 +1344,6 @@ int main(int argc, char *argv[])
 #endif
 
 	// do initialization
-	//cout << "initializing scene" << endl;
 	initScene(argc, argv);
 
 	std::cout << "starting main loop" << std::endl;
