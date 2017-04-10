@@ -30,12 +30,13 @@
 #include "Color.h"
 #include <cfloat>
 #include <vector>
+#include <string>
 
 #define MAX_TRIANGLES 20000
 #define MAX_SPHERES 100
 #define MAX_LIGHTS 100
 
-char * gFilename = NULL;
+char* gFilename = NULL;
 
 //different display modes
 #define MODE_DISPLAY 1
@@ -52,6 +53,7 @@ int gMode = MODE_DISPLAY;
 #define fov 60.0
 
 #define DEBUG_INPUT false
+bool gVerbose = true;
 bool gDebug = false;
 
 #define PHONG_SHADING 1
@@ -416,24 +418,23 @@ void AddDiffuseSpecularLight(Color& colorOut, Intersection& intersection)
 			double nl = Vector3::Dot(n, l);
 			if (nl < 0.0) { nl = 0.0; }
 
-			colorOut += (intersection.color_diffuse * nl);
+			colorOut += (intersection.color_diffuse * nl) * light.color;
 
 
 			if (gShadingMode == BLINN_PHONG_SHADING)
 			{
-				Vector3& h = Vector3::Normalize(l + v);
+				Vector3&& h = Vector3::Normalize(l + v);
 				double nh = Vector3::Dot(n, h);
-				colorOut += (intersection.color_specular * pow(nh, intersection.shininess * 4));
+				if (nh < 0.0) { nh = 0.0; }
+				colorOut += (intersection.color_specular * pow(nh, intersection.shininess * 4)) * light.color;
 			}
 			else // Default : PHONG_SHADING
 			{
 				Vector3& r = Vector3::Normalize((2.0 * nl * n) - l);
 				double vr = Vector3::Dot(v, r);
 				if (vr < 0.0) { vr = 0.0; }
-				colorOut += (intersection.color_specular * pow(vr, intersection.shininess));
+				colorOut += (intersection.color_specular * pow(vr, intersection.shininess)) * light.color;
 			}
-
-
 		}
 	}
 }
@@ -458,13 +459,13 @@ void draw_scene()
 	int xLoops = WIDTH + (gAntiAliasing ? 1 : 0);
 	printf("Finished Preparing...\n"); fflush(stdout);
 
-	for (unsigned int y = 0; y < yLoops; y++)
+	for (int y = 0; y < yLoops; y++)
 	{
-		printf("Drawing row %d/%d...\n", y, yLoops-1); fflush(stdout);
+		if(gVerbose) printf("Drawing row %d/%d...\n", y, yLoops-1); fflush(stdout);
 
 		glPointSize(2.0);
 		glBegin(GL_POINTS);
-		for (unsigned int x = 0; x < xLoops; x++)
+		for (int x = 0; x < xLoops; x++)
 		{
 			gDebug = false;
 			if (y == HEIGHT / 2 - 1) gDebug = true;
@@ -754,6 +755,7 @@ int main(int argc, char ** argv)
 	else if (argc == 2)
 	{
 		gMode = MODE_DISPLAY;
+		gFilename = "";
 		printf("Load file: %s, Display only.", argv[1]);
 	}
 	glutInit(&argc, argv);
@@ -764,6 +766,12 @@ int main(int argc, char ** argv)
 	glutInitWindowSize(WIDTH, HEIGHT);
 	std::string title = "Ray Tracer: ";
 	title += argv[1];
+	if (argc == 3)
+	{
+		title += " -> ";
+		title += argv[2];
+	}
+	std::cout << title << std::endl;
 	int window = glutCreateWindow(title.c_str());
 	glutDisplayFunc(display);
 	glutIdleFunc(idle);

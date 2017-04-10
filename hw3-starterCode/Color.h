@@ -36,6 +36,10 @@ struct Color
 	{
 		return Color(lhs.r * rhs, lhs.g * rhs, lhs.b * rhs);
 	}
+	inline friend Color operator*(Color lhs, const Color& rhs)
+	{
+		return Color(lhs.r * rhs.r, lhs.g * rhs.g, lhs.b * rhs.b);
+	}
 
 	inline friend Color operator*(const double lhs, Color rhs) { return rhs*lhs; }
 	inline friend Color operator/(Color lhs, const double rhs)
@@ -44,6 +48,7 @@ struct Color
 	}
 	inline friend Color operator/(const double lhs, Color rhs) { return rhs*lhs; }
 	Color& operator*=(const double rhs) { r *= rhs; g *= rhs; b *= rhs; return *this; }
+	Color& operator*=(const Color& rhs) { r *= rhs.r; g *= rhs.g; b *= rhs.b; return *this; }
 	Color& operator/=(const double rhs) { r /= rhs; g /= rhs; b /= rhs; return *this; }
 	Color& operator+=(const Color& rhs) { r += rhs.r; g += rhs.g; b += rhs.b; return *this; }
 
